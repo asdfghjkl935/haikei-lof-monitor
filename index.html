@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>海外科技LOF · 实时折溢价监控</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#232b36;--txt:#e6edf3;--sub:#8b949e;--up:#ff5252;--down:#22c55e;--acc:#3b82f6;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:720px;margin:0 auto;padding:14px}
+  h1{font-size:17px;margin:4px 0 2px;font-weight:700}
+  .sub{color:var(--sub);font-size:12px}
+  .cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:14px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 8px;text-align:center}
+  .card .k{color:var(--sub);font-size:11px;margin-bottom:4px}
+  .card .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center;margin-bottom:12px}
+  .hero .label{color:var(--sub);font-size:12px}
+  .hero .big{font-size:40px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums}
+  .hero .tag{display:inline-block;margin-top:6px;padding:3px 12px;border-radius:999px;font-size:13px;font-weight:600}
+  .note{margin-top:8px;font-size:12px;color:var(--sub)}
+  .bar{display:flex;justify-content:space-between;align-items:center;color:var(--sub);font-size:12px;margin:4px 0 10px}
+  button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;font-size:13px}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--sub);font-weight:500;font-size:11px}
+  .up{color:var(--up)}.down{color:var(--down)}
+  .sect{margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .sect h3{font-size:13px;margin:0 0 8px;color:var(--sub);font-weight:600}
+  .kv{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}
+  .kv .k{color:var(--sub)}
+  input{background:#0d1117;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:6px 8px;width:100%;font-size:13px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .small{font-size:11px;color:var(--sub);line-height:1.6}
+  details summary{color:var(--sub);font-size:12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>海外科技LOF · 实时折溢价监控</h1>
+  <div class="sub">501312（QDII-LOF）｜按最新美股行情实时估算净值</div>
+
+  <div class="hero">
+    <div class="label">实时折溢价率</div>
+    <div class="big" id="prem">--</div>
+    <div><span class="tag" id="tag">加载中…</span></div>
+    <div class="note" id="premNote"></div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="k">估算净值</div><div class="v" id="navEst">--</div></div>
+    <div class="card"><div class="k">场内最新价</div><div class="v" id="mkt">--</div></div>
+    <div class="card"><div class="k">官方净值(滞后)</div><div class="v" id="offNav">--</div></div>
+  </div>
+
+  <div class="bar">
+    <span id="status">加载中…</span>
+    <span><button onclick="refresh()">刷新</button></span>
+  </div>
+  <div class="small" id="times"></div>
+
+  <div class="sect" style="margin-top:12px">
+    <h3>成分ETF明细（持仓=2026年二季报）</h3>
+    <table>
+      <thead><tr><th>基金</th><th>权重</th><th>锚定价</th><th>现价</th><th>涨跌</th><th>贡献</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="sect">
+    <h3>参数</h3>
+    <div class="row2">
+      <div><div class="small">锚定净值（10-15）</div><input id="inNav" value="2.3651"></div>
+      <div><div class="small">汇率因子（默认1.000）</div><input id="inFx" value="1.0000"></div>
+    </div>
+    <div style="margin-top:8px"><button onclick="applyCfg()">应用</button></div>
+  </div>
+
+  <div class="sect">
+    <details>
+      <summary>方法与局限（点开）</summary>
+      <div class="small" style="margin-top:8px">
+        估算净值 = 锚定净值 × [ Σ(权重ᵢ × 现价ᵢ/锚定价ᵢ) + (1−Σ权重) ] × 汇率因子<br>
+        · 权重取 2026 年二季报前十大，合计 77.59%，其余 22.41% 按价值不变处理（未含汇率、第11名以后持仓、现金变动）。<br>
+        · 锚定价 = 各成分 ETF 在 2026-10-15 的收盘价。<br>
+        · 数据来自腾讯自选股（美股行情通常有约 15 分钟延迟），净值披露滞后约 T+1~T+2。<br>
+        · 本工具仅为个人套利辅助测算，不构成投资建议。
+      </div>
+    </details>
+  </div>
+</div>
+
+<script>
+const CFG = {
+  anchorNav: 2.3651,
+  anchorDate: "2026-10-15",
+  fx: 1.0,
+  list: [
+    {sym:"usARKK", name:"ARKK 方舟创新", w:18.48, a:85.69},
+    {sym:"usARKG", name:"ARKG 基因革命", w:16.93, a:49.24},
+    {sym:"usARKQ", name:"ARKQ 机器人自治", w:10.15, a:115.68},
+    {sym:"usAIQ",  name:"AIQ 人工智能", w:6.32,  a:64.09},
+    {sym:"usBOTZ", name:"BOTZ 机器人",   w:5.05,  a:33.74},
+    {sym:"usARKX", name:"ARKX 太空国防", w:5.00,  a:30.53},
+    {sym:"usXLK",  name:"XLK 科技行业",  w:4.67,  a:189.19},
+    {sym:"usSMH",  name:"SMH 半导体",    w:4.39,  a:558.84},
+    {sym:"usSOXX", name:"SOXX 半导体",   w:3.33,  a:514.71},
+    {sym:"usQQQ",  name:"QQQ 纳指100",   w:3.27,  a:728.00}
+  ]
+};
+const $ = id=>document.getElementById(id);
+
+function loadScript(codes){
+  return new Promise((resolve,reject)=>{
+    const s=document.createElement("script");
+    let done=false;
+    s.src="https://qt.gtimg.cn/q="+codes+"&_="+Date.now();
+    s.onload=()=>{done=true;resolve();};
+    s.onerror=()=>{done=true;reject(new Error("网络加载失败"));};
+    document.head.appendChild(s);
+    setTimeout(()=>{if(!done)reject(new Error("加载超时"));},9000);
+  });
+}
+const arr = sym => { const r=window["v_"+sym]; return r?String(r).split("~"):null; };
+const num = x => { const v=parseFloat(x); return isNaN(v)?null:v; };
+const f2 = x => (x==null||isNaN(x))?"--":x.toFixed(2);
+
+async function refresh(){
+  try{
+    $("status").textContent="刷新中…";
+    await loadScript(CFG.list.map(e=>e.sym).join(","));
+    await loadScript("sh501312");
+    compute();
+    $("status").textContent="已更新";
+  }catch(e){ $("status").textContent="加载失败："+e.message; }
+}
+
+function compute(){
+  const totalW = CFG.list.reduce((s,e)=>s+e.w,0)/100;
+  let factor=0, usTime="";
+  const rows=[];
+  CFG.list.forEach(e=>{
+    const q=arr(e.sym);
+    let price=null,r=null;
+    if(q){ price=num(q[3]); if(q[30]) usTime=q[30]; if(price!=null&&e.a) r=price/e.a-1; }
+    if(r!=null) factor += (e.w/100)*(1+r);
+    rows.push({e,price,r});
+  });
+  factor += (1-totalW);
+  const navEst = CFG.anchorNav*factor*CFG.fx;
+  const q=arr("sh501312");
+  const mkt = q?num(q[3]):null;
+  const offNav = (q&&q[81])?num(q[81]):null;
+  const prem = (mkt!=null&&navEst)?(mkt/navEst-1)*100:null;
+
+  $("navEst").textContent=f2(navEst);
+  $("mkt").textContent=f2(mkt);
+  $("offNav").textContent=f2(offNav);
+  renderPrem(prem,mkt,navEst);
+  $("times").innerHTML = "美股行情时间：" +(usTime||"--") +"　｜　本地刷新：" + new Date().toLocaleTimeString("zh-CN");
+
+  const tb=$("tbody"); tb.innerHTML="";
+  rows.forEach(o=>{
+    const tr=document.createElement("tr");
+    const cls = o.r==null?"":(o.r>=0?"up":"down");
+    const contrib = o.r==null?"--":(o.e.w*o.r).toFixed(3);
+    tr.innerHTML="<td>"+o.e.name+"</td><td>"+o.e.w.toFixed(2)+"%</td><td>"+o.e.a+"</td><td>"+f2(o.price)+"</td>"+
+      "<td class='"+cls+"'>"+(o.r==null?"--":(o.r*100>=0?"+":"")+(o.r*100).toFixed(2)+"%")+"</td>"+
+      "<td class='"+cls+"'>"+(contrib=="--"?"--":(contrib>=0?"+":"")+contrib+"%")+"</td>";
+    tb.appendChild(tr);
+  });
+}
+
+function renderPrem(prem,mkt,navEst){
+  const el=$("prem"), tag=$("tag"), note=$("premNote");
+  if(prem==null){ el.textContent="--"; return; }
+  const s=(prem>=0?"+":"")+prem.toFixed(2)+"%";
+  const isPrem = prem>=0;
+  const color = isPrem?"var(--up)":"var(--down)";
+  el.textContent=s; el.style.color=color;
+  tag.textContent = isPrem ? "溢价" : "折价";
+  tag.style.background = isPrem?"rgba(255,82,82,.16)":"rgba(34,197,94,.16)";
+  tag.style.color = color;
+  let txt="";
+  if(prem>0.8) txt="场内价明显高于真实净值 → 持有者可考虑卖出；想赚溢价需申购（注意场外限购20元/日）。";
+  else if(prem<-0.8) txt="场内价明显低于真实净值 → 折价套利窗口（场内买入→赎回）；注意持有满7天赎回费0.5%、并承担期间波动。";
+  else txt="接近平价，套利空间有限。";
+  note.textContent = txt + "（估算净值 "+navEst.toFixed(4)+" vs 场内价 "+f2(mkt)+"）";
+}
+
+function applyCfg(){
+  const n=parseFloat($("inNav").value), f=parseFloat($("inFx").value);
+  if(!isNaN(n)&&n>0) CFG.anchorNav=n;
+  if(!isNaN(f)&&f>0) CFG.fx=f;
+  compute();
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
