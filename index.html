@@ -82,7 +82,7 @@
   </div>
 
   <div class="sect">
-    <h3>成分ETF明细（持仓＝2026年二季报）</h3>
+    <h3>成分ETF明细（持仓＝2026年三季报）</h3>
     <table>
       <thead><tr><th>基金</th><th>权重</th><th>锚定价</th><th>现价</th><th>涨跌</th><th>贡献</th></tr></thead>
       <tbody id="tbody"></tbody>
@@ -109,6 +109,20 @@
   </div>
 
   <div class="sect">
+    <h3>滚动套利台账</h3>
+    <div class="row2">
+      <div><div class="small">买入日期</div><input id="bDate" type="date"></div>
+      <div><div class="small">买入价</div><input id="bPrice" placeholder="如 2.348"></div>
+    </div>
+    <div class="row2" style="margin-top:8px">
+      <div><div class="small">买入时折价%（可空）</div><input id="bDisc" placeholder="如 1.8"></div>
+      <div style="display:flex;align-items:flex-end"><button style="width:100%" onclick="addBatch()">+ 添加批次</button></div>
+    </div>
+    <div id="ledgerWrap" style="margin-top:10px"></div>
+    <div class="small" style="margin-top:6px">"浮动收益"按当前估算净值与当前费率档计算；实际赎回价＝赎回日净值（现在未知）。数据仅存本机浏览器。</div>
+  </div>
+
+  <div class="sect">
     <h3>参数</h3>
     <div class="row2">
       <div><div class="small">锚定净值(2026-10-15)</div><input id="inNav" value="2.3651"></div>
@@ -122,7 +136,7 @@
       <summary>方法与局限（点开）</summary>
       <div class="small" style="margin-top:8px">
         估算净值 = 锚定净值 × [ Σ(权重ᵢ × 现价ᵢ/锚定价ᵢ) + (1−Σ权重) ] × (当前汇率/锚定汇率)<br>
-        · 权重取 2026 二季报前十大（77.59%），其余 22.41% 按不变处理。<br>
+        · 权重取 2026 三季报前十大（93.61%），其余 6.39% 按不变处理。<br>
         · 锚定价＝各成分 ETF 在 2026-10-15 的收盘价；锚定净值 2.3651、锚定汇率 6.691。<br>
         · 成分行情来自腾讯自选股（美股约15分钟延迟）；历史折溢价＝腾讯K线×天天基金净值。<br>
         · 汇率来自 open.er-api.com / exchangerate.host，取不到时按 1.000 处理，可手动改。<br>
@@ -136,16 +150,16 @@
 const CFG = {
   anchorNav: 2.3651, anchorFx: 6.691, fxNow: 6.691,
   list: [
-    {sym:"usARKK", name:"ARKK 方舟创新", w:18.48, a:85.69},
-    {sym:"usARKG", name:"ARKG 基因革命", w:16.93, a:49.24},
-    {sym:"usARKQ", name:"ARKQ 机器人自治", w:10.15, a:115.68},
-    {sym:"usAIQ",  name:"AIQ 人工智能", w:6.32,  a:64.09},
-    {sym:"usBOTZ", name:"BOTZ 机器人",   w:5.05,  a:33.74},
-    {sym:"usARKX", name:"ARKX 太空国防", w:5.00,  a:30.53},
-    {sym:"usXLK",  name:"XLK 科技行业",  w:4.67,  a:189.19},
-    {sym:"usSMH",  name:"SMH 半导体",    w:4.39,  a:558.84},
-    {sym:"usSOXX", name:"SOXX 半导体",   w:3.33,  a:514.71},
-    {sym:"usQQQ",  name:"QQQ 纳指100",   w:3.27,  a:728.00}
+    {sym:"usARKK", name:"ARKK 方舟创新", w:18.72, a:85.69},
+    {sym:"usARKG", name:"ARKG 基因革命", w:19.71, a:49.24},
+    {sym:"usARKQ", name:"ARKQ 机器人自治", w:10.96, a:115.68},
+    {sym:"usAIQ",  name:"AIQ 人工智能", w:9.44,  a:64.09},
+    {sym:"usBOTZ", name:"BOTZ 机器人",   w:7.81,  a:33.74},
+    {sym:"usXLK",  name:"XLK 科技行业",  w:6.24,  a:189.19},
+    {sym:"usARKX", name:"ARKX 太空国防", w:6.09,  a:30.53},
+    {sym:"usQQQ",  name:"QQQ 纳指100",   w:5.33,  a:728.00},
+    {sym:"usSMH",  name:"SMH 半导体",    w:4.73,  a:558.84},
+    {sym:"usSOXX", name:"SOXX 半导体",   w:4.58,  a:514.71}
   ]
 };
 // 兜底历史（若运行时重算失败则用这份，数据截至 2026-10-15）
@@ -154,6 +168,7 @@ const HIST_FALLBACK = [["2026-08-03",-1.96],["2026-08-04",-3.58],["2026-08-05",0
 const $ = id=>document.getElementById(id);
 let HIST = HIST_FALLBACK.slice();
 let LIVE_PREM = null;
+let NAV_EST = null;
 
 function loadScript(src){
   return new Promise((res,rej)=>{
@@ -200,10 +215,18 @@ async function refresh(){
 
 function compute(){
   const totalW=CFG.list.reduce((s,e)=>s+e.w,0)/100;
-  let factor=0, usTime=""; const rows=[];
+  let factor=0, usTime="", ahCount=0; const rows=[];
   CFG.list.forEach(e=>{
-    const q=arr(e.sym); let price=null,r=null;
-    if(q){ price=num(q[3]); if(q[30]) usTime=q[30]; if(price!=null&&e.a) r=price/e.a-1; }
+    const q=arr(e.sym); let price=null,r=null,close=null;
+    if(q){
+      close=num(q[3]);
+      const bid=num(q[9]), ask=num(q[19]);
+      const ah=(bid&&ask&&bid>0&&ask>0)?(bid+ask)/2:null;
+      price=(ah&&close&&Math.abs(ah/close-1)>0.001)?ah:close;
+      if(close&&price&&Math.abs(price-close)/close>0.001) ahCount++;
+      if(q[30]) usTime=q[30];
+      if(price!=null&&e.a) r=price/e.a-1;
+    }
     if(r!=null) factor+=(e.w/100)*(1+r);
     rows.push({e,price,r});
   });
@@ -213,12 +236,12 @@ function compute(){
   const q=arr("sh501312");
   const mkt=q?num(q[3]):null, offNav=(q&&q[81])?num(q[81]):null;
   const prem=(mkt!=null&&navEst)?(mkt/navEst-1)*100:null;
-  LIVE_PREM=prem;
+  LIVE_PREM=prem; NAV_EST=navEst;
 
   $("navEst").textContent=f2(navEst); $("mkt").textContent=f2(mkt);
   $("offNav").textContent=f2(offNav); $("fxv").textContent=fxFactor.toFixed(4);
   renderPrem(prem,mkt,navEst);
-  $("times").innerHTML="美股行情：" +(usTime||"--") +"　｜　USD/CNY：" +CFG.fxNow.toFixed(4) +"　｜　本地：" +new Date().toLocaleTimeString("zh-CN");
+  $("times").innerHTML="美股行情：" +(usTime||"--") +"　｜　" +(ahCount>0?("含盘后 "+ahCount+" 只"):"常规时段") +"　｜　USD/CNY：" +CFG.fxNow.toFixed(4) +"　｜　本地：" +new Date().toLocaleTimeString("zh-CN");
 
   const tb=$("tbody"); tb.innerHTML="";
   rows.forEach(o=>{
@@ -229,7 +252,7 @@ function compute(){
       "<td class='"+cls+"'>"+(contrib=="--"?"--":(contrib>=0?"+":"")+contrib+"%")+"</td>";
     tb.appendChild(tr);
   });
-  drawChart(prem); renderStats(prem);
+  drawChart(prem); renderStats(prem); renderLedger();
   if(!$("cDisc").dataset.touched) { /* keep user input */ }
 }
 
@@ -297,6 +320,51 @@ function applyCfg(){
   if(!isNaN(n)&&n>0) CFG.anchorNav=n;
   if(!isNaN(f0)&&f0>0) CFG.anchorFx=f0;
   compute();
+}
+
+/* ===== 滚动套利台账 ===== */
+const LKEY="lof_ledger_v1";
+function lLoad(){ try{ return JSON.parse(localStorage.getItem(LKEY)||"[]"); }catch(e){ return []; } }
+function lSave(a){ localStorage.setItem(LKEY, JSON.stringify(a)); }
+function feeOf(days){
+  if(days<7) return {r:1.5,label:"<7天 1.5%",cls:"up"};
+  if(days<30) return {r:0.5,label:"7-29天 0.5%",cls:""};
+  if(days<180) return {r:0.25,label:"30-179天 0.25%",cls:"down"};
+  return {r:0,label:"≥180天 0",cls:"down"};
+}
+function addBatch(){
+  const d=$("bDate").value, p=parseFloat($("bPrice").value), disc=parseFloat($("bDisc").value);
+  if(!d||isNaN(p)||p<=0){ alert("请填写买入日期和买入价"); return; }
+  const a=lLoad(); a.push({id:Date.now(), date:d, price:p, disc: isNaN(disc)?null:disc});
+  lSave(a); $("bPrice").value=""; $("bDisc").value="";
+  renderLedger();
+}
+function delBatch(id){ if(!confirm("删除这条台账记录？")) return; lSave(lLoad().filter(x=>x.id!==id)); renderLedger(); }
+function renderLedger(){
+  const box=$("ledgerWrap"); if(!box) return;
+  const a=lLoad();
+  if(!a.length){ box.innerHTML="<div class='small' style='padding:6px 0'>暂无记录。填入买入日期与买入价，点“+ 添加批次”。</div>"; return; }
+  const t=new Date(); t.setHours(0,0,0,0);
+  let h="<table><thead><tr><th>买入日</th><th>买入价</th><th>折价</th><th>持有</th><th>费率档</th><th>浮动收益</th><th>年化</th><th></th></tr></thead><tbody>";
+  a.sort((x,y)=>x.date<y.date?-1:1).forEach(b=>{
+    const d0=new Date(b.date+"T00:00:00");
+    const days=Math.max(0,Math.floor((t-d0)/86400000));
+    const f=feeOf(days);
+    let fr="--", ann="--", cls="";
+    if(NAV_EST!=null){
+      const net=NAV_EST/b.price-1 - f.r/100 - 0.0003;
+      fr=(net*100>=0?"+":"")+(net*100).toFixed(2)+"%"; cls=net>=0?"down":"up";
+      if(days>0){ const an=net*365/days; ann=(an*100>=0?"+":"")+(an*100).toFixed(1)+"%"; }
+    }
+    const left=Math.max(0,7-days);
+    const tip=days<7?("<span class='up'>还差"+left+"天</span>"):"<span class='down'>可低费赎</span>";
+    h+="<tr><td>"+b.date.slice(5)+"</td><td>"+b.price.toFixed(3)+"</td><td>"+(b.disc==null?"--":b.disc.toFixed(1)+"%")+"</td>"+
+       "<td>"+days+"天<br>"+tip+"</td><td class='"+f.cls+"'>"+f.label+"</td>"+
+       "<td class='"+cls+"'>"+fr+"</td><td class='"+cls+"'>"+ann+"</td>"+
+       "<td><a href='javascript:void(0)' onclick='delBatch("+b.id+")' style='color:#8b949e'>✕</a></td></tr>";
+  });
+  h+="</tbody></table>";
+  box.innerHTML=h;
 }
 
 (async function(){
