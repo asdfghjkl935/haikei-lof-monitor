@@ -159,7 +159,7 @@ const CFG = {
     {sym:"usARKX", name:"ARKX 太空国防", w:6.09,  a:30.53},
     {sym:"usQQQ",  name:"QQQ 纳指100",   w:5.33,  a:728.00},
     {sym:"usSMH",  name:"SMH 半导体",    w:4.73,  a:558.84},
-    {sym:"usSOXX", name:"SOXX 半导体",   w:4.58,  a:514.71}
+    {sym:"usSOXX", name:"SOXX 半导体",   w:4.58,  a:171.57}
   ]
 };
 // 兜底历史（若运行时重算失败则用这份，数据截至 2026-10-15）
@@ -215,7 +215,7 @@ async function refresh(){
 
 function compute(){
   const totalW=CFG.list.reduce((s,e)=>s+e.w,0)/100;
-  let factor=0, usTime="", ahCount=0; const rows=[];
+  let factor=0, usTime="", ahCount=0, splitWarn=false; const rows=[];
   CFG.list.forEach(e=>{
     const q=arr(e.sym); let price=null,r=null,close=null;
     if(q){
@@ -228,6 +228,7 @@ function compute(){
       if(price!=null&&e.a) r=price/e.a-1;
     }
     if(r!=null) factor+=(e.w/100)*(1+r);
+    if(r!=null && r < -0.5) splitWarn=true;
     rows.push({e,price,r});
   });
   factor+=(1-totalW);
@@ -241,7 +242,7 @@ function compute(){
   $("navEst").textContent=f2(navEst); $("mkt").textContent=f2(mkt);
   $("offNav").textContent=f2(offNav); $("fxv").textContent=fxFactor.toFixed(4);
   renderPrem(prem,mkt,navEst);
-  $("times").innerHTML="美股行情：" +(usTime||"--") +"　｜　" +(ahCount>0?("含盘后 "+ahCount+" 只"):"常规时段") +"　｜　USD/CNY：" +CFG.fxNow.toFixed(4) +"　｜　本地：" +new Date().toLocaleTimeString("zh-CN");
+  $("times").innerHTML="美股行情：" +(usTime||"--") +"　｜　" +(ahCount>0?("含盘后 "+ahCount+" 只"):"常规时段") +"　｜　USD/CNY：" +CFG.fxNow.toFixed(4) +"　｜　本地：" +new Date().toLocaleTimeString("zh-CN") +(splitWarn?"　｜　<span class='up'>⚠ 疑似拆股，请核对锚定价</span>":"");
 
   const tb=$("tbody"); tb.innerHTML="";
   rows.forEach(o=>{
